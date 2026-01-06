@@ -19,10 +19,10 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 5, initialDel
   } catch (error: any) {
     const errorMsg = error.toString().toLowerCase();
     // 404 errors usually mean wrong model name, so retrying won't help, but we keep the logic for quotas (429)
-    const isQuotaError = errorMsg.includes('429') || 
-                         errorMsg.includes('quota') || 
-                         errorMsg.includes('resource exhausted') ||
-                         errorMsg.includes('limit');
+    const isQuotaError = errorMsg.includes('429') ||
+      errorMsg.includes('quota') ||
+      errorMsg.includes('resource exhausted') ||
+      errorMsg.includes('limit');
 
     if (retries > 0 && isQuotaError) {
       console.warn(`Quota hit, retrying in ${initialDelay}ms... (${retries} attempts left)`);
@@ -36,7 +36,7 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 5, initialDel
 export const analyzeProductImage = async (base64Image: string): Promise<{ description: string; category: string; features: string[] }> => {
   return withRetry(async () => {
     const ai = getAiClient();
-    
+
     const prompt = `
       Analyze this product image for an e-commerce keyword optimization task.
       1. Provide a detailed description of what the product is.
@@ -48,7 +48,7 @@ export const analyzeProductImage = async (base64Image: string): Promise<{ descri
 
     // Use gemini-2.0-flash-exp which is reliable for multimodal tasks
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.5-flash',
       contents: {
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
@@ -75,7 +75,7 @@ export const analyzeProductImage = async (base64Image: string): Promise<{ descri
 };
 
 export const batchScoreKeywords = async (
-  keywords: string[], 
+  keywords: string[],
   productContext: string
 ): Promise<{ keyword: string; score: number; reasoning: string }[]> => {
   return withRetry(async () => {
@@ -98,7 +98,7 @@ export const batchScoreKeywords = async (
 
     // Use gemini-2.0-flash-exp for fast text processing
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash-exp', 
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -124,10 +124,10 @@ export const batchScoreKeywords = async (
 
 // Simulate the "Machine Verification" step
 export const machineVerifyKeyword = async (keyword: string, productContext: string, imageBase64: string): Promise<boolean> => {
-    return withRetry(async () => {
-      const ai = getAiClient();
-      
-      const prompt = `
+  return withRetry(async () => {
+    const ai = getAiClient();
+
+    const prompt = `
         Strict Verification Mode.
         Product: ${productContext}
         Keyword: "${keyword}"
@@ -136,29 +136,29 @@ export const machineVerifyKeyword = async (keyword: string, productContext: stri
         Imagine a user searching for "${keyword}" - would they be satisfied finding this product?
         Return true if it is a good match, false otherwise.
       `;
-    
-      // Use gemini-2.0-flash-exp for deep check
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-exp',
-        contents: {
-            parts: [
-                { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
-                { text: prompt }
-            ]
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                  isMatch: { type: Type.BOOLEAN }
-              }
+
+    // Use gemini-2.0-flash-exp for deep check
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: {
+        parts: [
+          { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
+          { text: prompt }
+        ]
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isMatch: { type: Type.BOOLEAN }
           }
         }
-      });
-    
-      if (!response.text) return false;
-      const res = JSON.parse(response.text);
-      return res.isMatch;
+      }
     });
-  };
+
+    if (!response.text) return false;
+    const res = JSON.parse(response.text);
+    return res.isMatch;
+  });
+};
