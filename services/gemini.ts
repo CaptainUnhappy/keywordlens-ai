@@ -33,83 +33,54 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 5, initialDel
   }
 }
 
-// Zhipu AI Configuration
-const ZHIPU_API_KEY = process.env.ZHIPU_API_KEY;
-
-if (!ZHIPU_API_KEY) {
-  console.warn("ZHIPU_API_KEY is not set. Zhipu AI features will fail.");
-}
-const ZHIPU_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
-
 export const analyzeProductImage = async (base64Image: string): Promise<{ description: string; category: string; features: string[] }> => {
   return withRetry(async () => {
+    const ai = getAiClient();
+
+    // Clean base64 if it has data URL prefix, though typically passed without it from utils
+    const cleanBase64 = base64Image.includes('base64,')
+      ? base64Image.split('base64,')[1]
+      : base64Image;
+
     const prompt = `
       Analyze this product image for an e-commerce keyword optimization task.
       1. Provide a detailed description of what the product is.
       2. Identify its primary category.
       3. List key visual features, materials, or demographic targets.
-      
-      Output strictly in JSON format with the following structure:
-      {
-        "description": "string",
-        "category": "string",
-        "features": ["string", "string"]
-      }
     `;
 
-    const payload = {
-      model: "glm-4v-flash",
-      messages: [
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
         {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: prompt
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: (base64Image.startsWith('http') || base64Image.startsWith('data:'))
-                  ? base64Image
-                  : `data:image/jpeg;base64,${base64Image}`
-              }
-            }
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } },
+            { text: prompt }
           ]
         }
       ],
-      temperature: 0.1
-    };
-
-    const response = await fetch(ZHIPU_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ZHIPU_API_KEY}`
-      },
-      body: JSON.stringify(payload)
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            description: { type: Type.STRING },
+            category: { type: Type.STRING },
+            features: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            }
+          },
+          required: ["description", "category", "features"]
+        }
+      }
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Zhipu API Error Details:", errText);
-      throw new Error(`Zhipu API Error: ${response.status} - ${errText}`);
-    }
+    if (!response.text) throw new Error("No content received from Gemini AI");
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-
-    if (!content) throw new Error("No content received from Zhipu AI");
-
-    // Clean up markdown code blocks if present
-    const jsonString = content.replace(/```json\n?|\n?```/g, '').trim();
-
-    try {
-      return JSON.parse(jsonString);
-    } catch (e) {
-      console.error("Failed to parse Zhipu response:", content);
-      throw new Error("Invalid JSON response from AI");
-    }
+    // Parse the JSON response directly
+    return JSON.parse(response.text);
   });
 };
 

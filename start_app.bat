@@ -2,6 +2,15 @@
 @echo off
 echo Starting KeywordLens AI System...
 
+:: Check for .env file
+if not exist ".env" (
+    echo.
+    echo [ERROR] .env file not found!
+    echo Please ensure .env exists in the root directory.
+    pause
+    exit /b
+)
+
 echo.
 echo [Checking Backend Environment...]
 where uv >nul 2>nul
