@@ -253,13 +253,13 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
           <button
             onClick={() => api.exportResults()}
             disabled={status !== 'done'}
-            className={`w-full px-4 py-3 rounded-xl font-bold transition shadow-md justify-center ${status === 'done'
-              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+            className={`w-full px-4 py-3 rounded-xl font-bold transition shadow-md font-bold transition flex items-center justify-center gap-2 border ${status === 'done'
+              ? 'bg-green-600 text-white hover:bg-green-700'
               : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
           >
             <FileDown size={18} />
-            下载 excel
+            Export Excel
           </button>
           <button
             onClick={() => onAnalysisComplete([], productContext!)}

@@ -80,10 +80,10 @@ class WorkflowEngine:
                         # Maybe mark as kept automatically if it's "Auto"?
                         # item['status'] = 'kept' 
                     else:
-                        item['status'] = 'EXCLUDED'
+                        item['status'] = 'deleted'
                         self.excluded_queue.append(item)
                         # Mark as deleted automatically
-                        item['status'] = 'deleted'
+                        # item['status'] = 'EXCLUDED'
                 
                 self.processed_count = len(keywords) # Phase 1 done
                 self.status_message = f"Scoring Complete. Manual: {len(self.manual_queue)}, Auto: {len(self.auto_queue)}, Excl: {len(self.excluded_queue)}"
@@ -132,7 +132,7 @@ class WorkflowEngine:
                 "manual_count": len(self.manual_queue),
                 "auto_count": len(self.auto_queue),
                 "excluded_count": len(self.excluded_queue),
-                "manual_pending": len([x for x in self.manual_queue if x['status'] == 'pending_MANUAL']),
+                "manual_pending": len([x for x in self.manual_queue if x['status'] == 'pending']),
                 "current_manual_index": self.current_manual_index,
                 "current_keyword": self._get_current_manual_keyword()
             }

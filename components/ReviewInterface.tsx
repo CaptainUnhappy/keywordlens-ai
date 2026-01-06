@@ -62,7 +62,7 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
   const stats = {
     approved: reviewQueue.filter(k => k.status === 'kept').length,
     rejected: reviewQueue.filter(k => k.status === 'deleted').length,
-    pending: reviewQueue.filter(k => k.status === 'pending_MANUAL').length
+    pending: reviewQueue.filter(k => k.status === 'pending').length
   };
 
   return (
@@ -123,7 +123,7 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
                   <span className="inline-block px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold mb-4">
                     Score: {currentCard.score?.toFixed(3)}
                   </span>
-                  {currentCard.status !== 'pending_MANUAL' && (
+                  {currentCard.status !== 'pending' && (
                     <span className={`block mt-2 text-xs font-bold uppercase ${currentCard.status === 'kept' ? 'text-green-600' : 'text-red-600'}`}>
                       {currentCard.status}
                     </span>
@@ -163,7 +163,7 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
         <div className="lg:col-span-3 bg-white rounded-2xl shadow-lg border border-slate-200 p-4 flex flex-col min-h-0">
           <h3 className="font-bold text-slate-700 mb-4">History</h3>
           <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-            {reviewQueue.filter(k => k.status !== 'pending_MANUAL').reverse().map((k, i) => (
+            {reviewQueue.filter(k => k.status !== 'pending').reverse().map((k, i) => (
               <div key={i} className={`p-2 rounded-lg text-xs flex justify-between ${k.status === 'kept' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
                 <span className="font-medium">{k.keyword}</span>
                 <span>{k.status}</span>
