@@ -3,6 +3,24 @@
 echo Starting KeywordLens AI System...
 
 echo.
+echo [Checking Backend Environment...]
+where uv >nul 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    echo uv not found. Installing...
+    powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+)
+
+echo Syncing Python dependencies...
+uv sync
+
+echo.
+echo [Checking Frontend Environment...]
+if not exist "node_modules" (
+    echo node_modules not found. Installing dependencies...
+    call npm install
+)
+
+echo.
 echo [1/2] Starting Python Backend...
 start "Python Backend" /D "amazon-keyword-filter" uv run python server.py
 
