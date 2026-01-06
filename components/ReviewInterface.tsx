@@ -58,24 +58,11 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
     }
   };
 
-  const handleExport = () => {
-    const data = reviewQueue.map(k => ({
-      Keyword: k.keyword,
-      Score: k.score,
-      Status: k.status,
-      // Reasoning: k.reasoning
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Hybrid_Results");
-    XLSX.writeFile(wb, "hybrid_analysis_results.xlsx");
-  };
 
   const stats = {
     approved: reviewQueue.filter(k => k.status === 'kept').length,
     rejected: reviewQueue.filter(k => k.status === 'deleted').length,
-    pending: reviewQueue.filter(k => k.status === 'pending').length
+    pending: reviewQueue.filter(k => k.status === 'pending_MANUAL').length
   };
 
   return (
@@ -98,7 +85,7 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
           <p className="text-2xl font-bold text-red-700">{stats.rejected}</p>
         </div>
         <button
-          onClick={handleExport}
+          onClick={() => api.exportResults()}
           className="bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-xl shadow-md transition flex flex-col items-center justify-center"
         >
           <Download className="mb-1" size={20} />
@@ -136,7 +123,7 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
                   <span className="inline-block px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold mb-4">
                     Score: {currentCard.score?.toFixed(3)}
                   </span>
-                  {currentCard.status !== 'pending' && (
+                  {currentCard.status !== 'pending_MANUAL' && (
                     <span className={`block mt-2 text-xs font-bold uppercase ${currentCard.status === 'kept' ? 'text-green-600' : 'text-red-600'}`}>
                       {currentCard.status}
                     </span>
@@ -176,7 +163,7 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
         <div className="lg:col-span-3 bg-white rounded-2xl shadow-lg border border-slate-200 p-4 flex flex-col min-h-0">
           <h3 className="font-bold text-slate-700 mb-4">History</h3>
           <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-            {reviewQueue.filter(k => k.status !== 'pending').reverse().map((k, i) => (
+            {reviewQueue.filter(k => k.status !== 'pending_MANUAL').reverse().map((k, i) => (
               <div key={i} className={`p-2 rounded-lg text-xs flex justify-between ${k.status === 'kept' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
                 <span className="font-medium">{k.keyword}</span>
                 <span>{k.status}</span>

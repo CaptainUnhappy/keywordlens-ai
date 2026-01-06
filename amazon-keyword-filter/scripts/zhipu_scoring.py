@@ -21,7 +21,7 @@ def get_embedding(texts: List[str]) -> np.ndarray:
         "Content-Type": "application/json",
     }
 
-    BATCH_SIZE = 16 # 稍微调小一点，确保稳定性
+    BATCH_SIZE = 64 # 根据要求调整为最大值64
     all_embeddings = []
 
     # 分批处理

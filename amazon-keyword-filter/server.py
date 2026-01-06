@@ -63,12 +63,26 @@ async def upload_excel(file: UploadFile = File(...)):
                 found_col = df.columns[0]
             else:
                  raise HTTPException(status_code=400, detail="Empty Excel")
+        
+        # Store in engine
+        engine.set_data(df, found_col)
                  
         keywords = df[found_col].dropna().astype(str).tolist()
         return {"keywords": keywords, "count": len(keywords)}
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+from fastapi.responses import FileResponse
+
+@app.get("/api/export")
+def export_results():
+    """Generate and return the result Excel"""
+    try:
+        path = engine.generate_export_excel()
+        return FileResponse(path, filename="keyword_analysis_result.xlsx")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/status")
 def get_status():
@@ -98,4 +112,4 @@ def shutdown():
     return {"status": "shutting down"}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)

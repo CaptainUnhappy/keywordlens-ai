@@ -25,6 +25,16 @@ export const api = {
         return res.json();
     },
 
+    async uploadExcel(file: File) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch(`${API_BASE}/upload_excel`, {
+            method: 'POST',
+            body: formData
+        });
+        return res.json();
+    },
+
     async getStatus(): Promise<AnalysisStatus> {
         const res = await fetch(`${API_BASE}/status`);
         return res.json();
@@ -59,5 +69,29 @@ export const api = {
         } catch (e) {
             // Ignore error as server shuts down
         }
+    },
+
+    async exportResults() {
+        const res = await fetch(`${API_BASE}/export`);
+        if (!res.ok) {
+            const errText = await res.text();
+            try {
+                const json = JSON.parse(errText);
+                throw new Error(json.detail || "Export failed");
+            } catch (e) {
+                throw new Error(errText || "Export failed");
+            }
+        }
+
+        // Trigger download
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `result_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
     }
 };

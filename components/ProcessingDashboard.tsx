@@ -14,6 +14,7 @@ interface ProcessingDashboardProps {
   initialProcessed?: KeywordItem[]; // For resume functionality
   productImageBase64: string;
   imageFile: File;
+  excelFile: File | null;
   onAnalysisComplete: (results: KeywordItem[], ctx: ProductContext) => void;
 }
 
@@ -22,6 +23,7 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
   initialProcessed = [],
   productImageBase64,
   imageFile,
+  excelFile,
   onAnalysisComplete
 }) => {
   const [status, setStatus] = useState<'analyzing_image' | 'starting_backend' | 'polling' | 'paused' | 'done'>('analyzing_image');
@@ -31,11 +33,18 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
 
   const isPausedRef = useRef(false);
 
+  const hasStartedBackendRef = useRef(false);
+
   const addLog = (msg: string) => setLogs(prev => [msg, ...prev].slice(0, 50));
+
+  const hasStartedAnalysisRef = useRef(false);
 
   // 1. Analyze Image (Client-side Gemini)
   useEffect(() => {
     const startImageAnalysis = async () => {
+      if (hasStartedAnalysisRef.current) return;
+      hasStartedAnalysisRef.current = true;
+
       try {
         addLog('Starting visual analysis of product (Gemini)...');
         const analysis = await analyzeProductImage(productImageBase64);
@@ -50,9 +59,13 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
 
         setProductContext(ctx);
         addLog(`Image Analyzed: ${analysis.category}`);
-        setStatus('starting_backend');
+
+        // Only advance status if we haven't moved past it (though usually we wouldn't have)
+        setStatus(s => s === 'analyzing_image' ? 'starting_backend' : s);
+
       } catch (err) {
         addLog(`Error analyzing image: ${err}`);
+        hasStartedAnalysisRef.current = false; // Allow retry on error
       }
     };
 
@@ -65,27 +78,47 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
   useEffect(() => {
     const startBackend = async () => {
       if (status !== 'starting_backend' || !productContext) return;
+      if (hasStartedBackendRef.current) return; // Prevent double call
+
+      hasStartedBackendRef.current = true;
 
       try {
+        // Upload Excel first if available
+        if (excelFile) {
+          addLog('Uploading Excel to backend for persistence...');
+          await api.uploadExcel(excelFile);
+          addLog('Excel uploaded successfully.');
+        }
+
         addLog('Sending data to Python Backend...');
-        await api.analyze(initialKeywords, productContext.description);
-        addLog('Backend analysis started successfully.');
+        const response = await api.analyze(initialKeywords, productContext.description);
+        addLog(`Backend initiated: ${JSON.stringify(response)}`);
+
         setStatus('polling');
+        addLog('Status switched to POLLING');
       } catch (e) {
         addLog(`Error connecting to backend: ${e}`);
         addLog('Make sure server.py is running on port 8000');
+        hasStartedBackendRef.current = false; // Reset on error
       }
     };
 
     startBackend();
-  }, [status, productContext, initialKeywords]);
+  }, [status, productContext, initialKeywords, excelFile]);
 
   // 3. Poll Backend Status
   useEffect(() => {
     if (status !== 'polling') return;
 
+    addLog('Starting Polling Interval...');
+
     const interval = setInterval(async () => {
-      if (isPausedRef.current) return;
+      if (isPausedRef.current) {
+        // addLog('Polling paused...'); // Too noisy
+        return;
+      }
+
+      // addLog('Polling...'); // Debug only
 
       try {
         const s = await api.getStatus();
@@ -96,7 +129,8 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
         // Let's assume if we have results in queues, we show stats.
 
         // Logic to detect completion could be handled by backend status string
-        if (s.status.includes('Scoring Complete') || s.manual_count + s.auto_count === initialKeywords.length) {
+        const total = s.manual_count + s.auto_count + s.excluded_count;
+        if (s.status.includes('Scoring Complete') || total === initialKeywords.length) {
           setStatus('done');
           addLog('Scoring phase complete.');
         }
@@ -125,59 +159,8 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
   const totalProcessed = (backendStatus?.manual_count || 0) + (backendStatus?.auto_count || 0) + (backendStatus?.excluded_count || 0);
   const progress = Math.min(100, (totalProcessed / initialKeywords.length) * 100);
 
-  if (status === 'done' && productContext) {
-    return (
-      <div className="text-center space-y-6">
-        <div className="text-6xl text-green-500 mb-4 flex justify-center"><CheckCircle2 /></div>
-        <h2 className="text-3xl font-bold text-slate-800">Analysis Complete!</h2>
-
-        {/* Chart in Done View */}
-        <div className="w-64 h-64 mx-auto relative">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={chartData}
-                innerRadius={50}
-                outerRadius={80}
-                paddingAngle={5}
-                dataKey="value"
-              >
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-          {/* Legend / Center Text */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center">
-              <span className="block text-xl font-bold text-slate-700">{initialKeywords.length}</span>
-              <span className="text-[10px] text-slate-500 uppercase">Total</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Chart Legend */}
-        <div className="flex justify-center gap-4 text-sm font-medium flex-wrap">
-          {chartData.map(d => (
-            <div key={d.name} className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-100">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }}></span>
-              <span className="text-slate-600">{d.name}:</span>
-              <span className="font-bold">{d.value}</span>
-            </div>
-          ))}
-        </div>
-
-        <button
-          onClick={() => onAnalysisComplete([], productContext)}
-          className="bg-indigo-600 text-white px-8 py-4 rounded-xl text-lg font-bold shadow-lg hover:bg-indigo-700 transition"
-        >
-          Proceed to Review
-        </button>
-      </div>
-    );
-  }
+  // NOTE: Removed full-page "Done" view to keep the dashboard visible as per user request.
+  // if (status === 'done' && productContext) { return ... }
 
   return (
     <div className="w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -263,6 +246,31 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
               <span className="text-xs text-slate-500">Scored</span>
             </div>
           </div>
+        </div>
+
+        {/* Buttons in Right Column */}
+        <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col gap-3">
+          <button
+            onClick={() => api.exportResults()}
+            disabled={status !== 'done'}
+            className={`w-full px-4 py-3 rounded-xl font-bold transition shadow-md justify-center ${status === 'done'
+              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+              }`}
+          >
+            <FileDown size={18} />
+            下载 excel
+          </button>
+          <button
+            onClick={() => onAnalysisComplete([], productContext!)}
+            disabled={status !== 'done'}
+            className={`w-full px-4 py-3 rounded-xl font-bold transition shadow-md ${status === 'done'
+              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+              }`}
+          >
+            Start Hybrid Review
+          </button>
         </div>
       </div>
     </div>

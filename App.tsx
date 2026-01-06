@@ -9,10 +9,11 @@ const SESSION_KEY = 'keyword_lens_session';
 
 const App: React.FC = () => {
   const [step, setStep] = useState<AppStep>(AppStep.UPLOAD);
-  
+
   // App State
   const [rawKeywords, setRawKeywords] = useState<string[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [excelFile, setExcelFile] = useState<File | null>(null);
   const [imageBase64, setImageBase64] = useState<string>("");
   const [results, setResults] = useState<KeywordItem[]>([]);
   const [productContext, setProductContext] = useState<ProductContext | null>(null);
@@ -38,7 +39,7 @@ const App: React.FC = () => {
       const saved = localStorage.getItem(SESSION_KEY);
       if (!saved) return;
       const data = JSON.parse(saved);
-      
+
       // Restore state
       setRawKeywords(data.rawKeywords || []);
       setImageBase64(data.imageBase64 || "");
@@ -47,9 +48,11 @@ const App: React.FC = () => {
       // We'll create a dummy file object if needed or just rely on base64.
       const dummyFile = new File([""], "restored_image.jpg", { type: "image/jpeg" });
       setImageFile(dummyFile);
-      
+      // Logic gap: can't restore excel file object for export if refreshing page. 
+      // User might need to re-upload for export to work if restoring session.
+
       setRestoredProcessed(data.processedKeywords || []);
-      
+
       if (data.productContext) {
         setProductContext(data.productContext);
       }
@@ -69,9 +72,10 @@ const App: React.FC = () => {
     setRestoredProcessed([]);
   };
 
-  const handleFilesReady = (keywords: string[], imgFile: File, base64: string) => {
+  const handleFilesReady = (keywords: string[], imgFile: File, base64: string, excFile: File) => {
     setRawKeywords(keywords);
     setImageFile(imgFile);
+    setExcelFile(excFile);
     setImageBase64(base64);
     setRestoredProcessed([]); // New upload, no restored items
     setStep(AppStep.ANALYSIS);
@@ -86,13 +90,14 @@ const App: React.FC = () => {
   };
 
   const handleFinish = () => {
-      clearSession();
-      setStep(AppStep.UPLOAD);
-      setResults([]);
-      setProductContext(null);
-      setRawKeywords([]);
-      setImageBase64("");
-      setImageFile(null);
+    clearSession();
+    setStep(AppStep.UPLOAD);
+    setResults([]);
+    setProductContext(null);
+    setRawKeywords([]);
+    setImageBase64("");
+    setImageFile(null);
+    setExcelFile(null);
   }
 
   return (
@@ -109,29 +114,29 @@ const App: React.FC = () => {
             </span>
           </div>
           <div className="flex items-center gap-4">
-             {hasSavedSession && step === AppStep.UPLOAD && (
-                 <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-full animate-pulse">
-                     <span className="text-xs font-bold text-amber-700">Unfinished session found</span>
-                     <button 
-                        onClick={restoreSession}
-                        className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded transition flex items-center gap-1"
-                     >
-                        <RotateCcw size={10} /> Resume
-                     </button>
-                     <button 
-                        onClick={clearSession}
-                        className="text-xs text-slate-400 hover:text-red-500 p-1"
-                        title="Discard"
-                     >
-                        <Trash2 size={12} />
-                     </button>
-                 </div>
-             )}
-             <div className="text-sm text-slate-500 font-medium">
-                {step === AppStep.UPLOAD && "Step 1: Setup"}
-                {step === AppStep.ANALYSIS && "Step 2: AI Processing"}
-                {step === AppStep.REVIEW && "Step 3: Review & Export"}
-             </div>
+            {hasSavedSession && step === AppStep.UPLOAD && (
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-full animate-pulse">
+                <span className="text-xs font-bold text-amber-700">Unfinished session found</span>
+                <button
+                  onClick={restoreSession}
+                  className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded transition flex items-center gap-1"
+                >
+                  <RotateCcw size={10} /> Resume
+                </button>
+                <button
+                  onClick={clearSession}
+                  className="text-xs text-slate-400 hover:text-red-500 p-1"
+                  title="Discard"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            )}
+            <div className="text-sm text-slate-500 font-medium">
+              {step === AppStep.UPLOAD && "Step 1: Setup"}
+              {step === AppStep.ANALYSIS && "Step 2: AI Processing"}
+              {step === AppStep.REVIEW && "Step 3: Review & Export"}
+            </div>
           </div>
         </div>
       </header>
@@ -143,7 +148,7 @@ const App: React.FC = () => {
             <div className="mb-8 text-center max-w-2xl">
               <h1 className="text-4xl font-extrabold text-slate-900 mb-4">Intelligent Keyword Screening</h1>
               <p className="text-lg text-slate-600">
-                Upload your product image and Excel keyword list. We'll use multi-modal AI to 
+                Upload your product image and Excel keyword list. We'll use multi-modal AI to
                 filter thousands of keywords in minutes, keeping only the most relevant ones.
               </p>
             </div>
@@ -152,17 +157,18 @@ const App: React.FC = () => {
         )}
 
         {step === AppStep.ANALYSIS && imageFile && (
-          <ProcessingDashboard 
+          <ProcessingDashboard
             initialKeywords={rawKeywords}
             initialProcessed={restoredProcessed}
             productImageBase64={imageBase64}
             imageFile={imageFile}
+            excelFile={excelFile}
             onAnalysisComplete={handleAnalysisComplete}
           />
         )}
 
         {step === AppStep.REVIEW && productContext && (
-          <ReviewInterface 
+          <ReviewInterface
             initialKeywords={results}
             productContext={productContext}
           />

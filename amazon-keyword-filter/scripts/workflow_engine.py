@@ -22,6 +22,7 @@ class WorkflowEngine:
         # Queues
         self.manual_queue = [] # List of dicts: {keyword, score, status}
         self.auto_queue = []   # List of dicts
+        self.excluded_queue = [] # List of dicts
         
         # State
         self.is_processing = False
@@ -35,9 +36,14 @@ class WorkflowEngine:
         
         # Config
         self.MANUAL_THRESHOLD = 0.6
+        self.AUTO_THRESHOLD = 0.45
         
         # Lock
         self.lock = threading.Lock()
+        
+        # Data Storage
+        self.original_df = None
+        self.keyword_col_name = None
 
     def start_analysis(self, keywords: List[str], product_description: str):
         """Start the analysis process: Scoring -> Split queues"""
@@ -58,16 +64,29 @@ class WorkflowEngine:
             with self.lock:
                 self.manual_queue = []
                 self.auto_queue = []
+                self.excluded_queue = []
                 
                 for item in scored_results:
-                    item['status'] = 'pending' # pending, kept, deleted
+                    # Item keys: keyword, score, reason (from zhipu), status
+                    
                     if item['score'] > self.MANUAL_THRESHOLD:
+                        item['status'] = 'pending'
                         self.manual_queue.append(item)
-                    else:
+                    elif item['score'] >= self.AUTO_THRESHOLD:
+                         # Auto-approve? or just separate queue?
+                         # For now, put in auto queue.
+                        item['status'] = 'AUTO'
                         self.auto_queue.append(item)
+                        # Maybe mark as kept automatically if it's "Auto"?
+                        # item['status'] = 'kept' 
+                    else:
+                        item['status'] = 'EXCLUDED'
+                        self.excluded_queue.append(item)
+                        # Mark as deleted automatically
+                        item['status'] = 'deleted'
                 
                 self.processed_count = len(keywords) # Phase 1 done
-                self.status_message = f"Scoring Complete. Manual: {len(self.manual_queue)}, Auto: {len(self.auto_queue)}"
+                self.status_message = f"Scoring Complete. Manual: {len(self.manual_queue)}, Auto: {len(self.auto_queue)}, Excl: {len(self.excluded_queue)}"
                 
             # 2. Trigger Auto workflow (Optional: for now just mark them)
             # self._start_auto_crawler() 
@@ -112,7 +131,8 @@ class WorkflowEngine:
                 "status": self.status_message,
                 "manual_count": len(self.manual_queue),
                 "auto_count": len(self.auto_queue),
-                "manual_pending": len([x for x in self.manual_queue if x['status'] == 'pending']),
+                "excluded_count": len(self.excluded_queue),
+                "manual_pending": len([x for x in self.manual_queue if x['status'] == 'pending_MANUAL']),
                 "current_manual_index": self.current_manual_index,
                 "current_keyword": self._get_current_manual_keyword()
             }
@@ -189,6 +209,98 @@ class WorkflowEngine:
     def shutdown(self):
         if self.searcher:
             self.searcher.close()
+
+    def set_data(self, df: pd.DataFrame, keyword_col: str):
+        """Store the original dataframe for export"""
+        self.original_df = df
+        self.keyword_col_name = keyword_col
+
+    def generate_export_excel(self) -> str:
+        """
+        Generate Excel file with original data + Score/Status columns inserted
+        Returns path to temp file
+        """
+        with self.lock:
+            # Defensive check for attributes (in case of hot reload issues or bad init)
+            if not hasattr(self, 'original_df'): self.original_df = None
+            if not hasattr(self, 'keyword_col_name'): self.keyword_col_name = None
+
+            if self.original_df is None or self.keyword_col_name is None:
+                raise ValueError("No data loaded. Please upload Excel file first.")
+                
+            # Create a copy to avoid mutating original state
+            df = self.original_df.copy()
+            
+            # Map results to a dictionary for fast lookup
+            # Combine all queues
+            all_results = self.manual_queue + self.auto_queue + self.excluded_queue
+            
+            # Create mapping: keyword -> {score, status}
+            # Note: This implies original keywords must be unique or we map to first occurrence.
+            # If original had duplicates, this simple map might be ambiguous, but acceptable for now.
+            result_map = {item['keyword']: item for item in all_results}
+            
+            scores = []
+            statuses = []
+            
+            for val in df[self.keyword_col_name]:
+                val_str = str(val)
+                if val_str in result_map:
+                    scores.append(result_map[val_str]['score'])
+                    statuses.append(result_map[val_str]['status'])
+                else:
+                    scores.append(None)
+                    statuses.append('unprocessed')
+            
+            # Insert Columns
+            target_col_idx = df.columns.get_loc(self.keyword_col_name)
+            
+            # Helper to safely insert
+            def safe_insert(col_name, data):
+                if col_name in df.columns:
+                    # Drop existing if we want to overwrite, or rename new one?
+                    # Let's overwrite
+                    del df[col_name]
+                    # Recalculate index as dropping might shift it (though target_col_idx is unlikely to change if it's to the left, but let's be safe)
+                    # Actually valid approach: just assign
+                    df[col_name] = data
+                    # But we want specific position.
+                    # Simplified: If exists, drop it first.
+                
+                # Re-calculate index just in case
+                curr_idx = df.columns.get_loc(self.keyword_col_name)
+                df.insert(curr_idx + 1, col_name, data)
+
+            # Insert Status first (so it pushes right), then Score (so it ends up: Keyword | Score | Status)
+            # Note: insert at idx+1 pushes existing idx+1 to idx+2.
+            # So if we want [Key, Score, Status], we insert Status at Key+1 -> [Key, Status]
+            # Then insert Score at Key+1 -> [Key, Score, Status]
+            
+            # Check and drop first to avoid "already exists" error
+            if 'Status' in df.columns: del df['Status']
+            if 'Score' in df.columns: del df['Score']
+
+            # Re-get index after deletions
+            base_idx = df.columns.get_loc(self.keyword_col_name)
+            
+            df.insert(base_idx + 1, 'Status', statuses)
+            df.insert(base_idx + 1, 'Score', scores)
+            
+            # Save to temp file
+            # Use absolute path to temp dir or current working dir?
+            # Ensure unique name
+            filename = f"export_{int(time.time())}_{id(self)}.xlsx"
+            filepath = os.path.abspath(os.path.join(os.getcwd(), filename))
+            
+            try:
+                df.to_excel(filepath, index=False)
+            except PermissionError:
+                # Fallback name if somehow locked
+                filename = f"export_{int(time.time())}_fallback.xlsx"
+                filepath = os.path.abspath(os.path.join(os.getcwd(), filename))
+                df.to_excel(filepath, index=False)
+                
+            return filepath
 
 # Global instance
 engine = WorkflowEngine()
