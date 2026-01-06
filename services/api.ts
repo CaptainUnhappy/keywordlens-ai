@@ -3,6 +3,7 @@ const API_BASE = 'http://localhost:8000/api';
 
 export interface AnalysisStatus {
     status: string;
+    progress: number;
     manual_count: number;
     auto_count: number;
     excluded_count: number;

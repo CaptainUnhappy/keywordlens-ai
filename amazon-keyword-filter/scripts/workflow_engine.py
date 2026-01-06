@@ -30,6 +30,7 @@ class WorkflowEngine:
         self.status_message = "Idle"
         self.total_keywords = 0
         self.processed_count = 0
+        self.progress = 0 # 0-100 percentage
         
         # Browser Control
         self.searcher: Optional[AmazonSearcher] = None
@@ -51,6 +52,7 @@ class WorkflowEngine:
         self.status_message = "AI Scoring in progress..."
         self.total_keywords = len(keywords)
         self.processed_count = 0
+        self.progress = 0
         
         # Run in separate thread to not block API
         threading.Thread(target=self._run_scoring_and_split, args=(keywords, product_description)).start()
@@ -59,7 +61,11 @@ class WorkflowEngine:
         """Step 1: AI Scoring & Splitting"""
         try:
             # 1. Scoring
-            scored_results = score_keywords(keywords, product_description)
+            def progress_cb(percent, msg):
+                self.progress = percent
+                self.status_message = msg
+                
+            scored_results = score_keywords(keywords, product_description, progress_callback=progress_cb)
             
             with self.lock:
                 self.manual_queue = []
@@ -86,6 +92,7 @@ class WorkflowEngine:
                         # item['status'] = 'EXCLUDED'
                 
                 self.processed_count = len(keywords) # Phase 1 done
+                self.progress = 100
                 self.status_message = f"Scoring Complete. Manual: {len(self.manual_queue)}, Auto: {len(self.auto_queue)}, Excl: {len(self.excluded_queue)}"
                 
             # 2. Trigger Auto workflow (Optional: for now just mark them)
@@ -106,29 +113,33 @@ class WorkflowEngine:
 
     def open_browser(self):
         """Initialize browser for manual review"""
-        if not self.searcher:
-            try:
-                self.status_message = "Opening Browser (Chrome)..."
+        try:
+            self.status_message = "Opening Browser (Chrome)..."
+            
+            if not self.searcher:
                 # headless=False for manual review
                 self.searcher = AmazonSearcher(headless=False, debug=True)
-                self.status_message = "Browser Ready. Waiting for manual review."
-            except Exception as e:
-                self.status_message = f"Browser Init Failed: {str(e)}"
-                print(f"Browser Init Error: {e}")
-        else:
-             # If it exists, check if alive
-             try:
-                 if self.searcher.driver:
-                     self.searcher.driver.title # Probe
-             except:
-                 self.searcher = None
-                 self.open_browser()
+            
+            # Always ensure driver is running (creates it if None/closed)
+            self.searcher._ensure_driver()
+            
+            # Verify connectivity
+            if self.searcher.driver:
+                 _ = self.searcher.driver.title
+
+            self.status_message = "Browser Ready. Waiting for manual review."
+            
+        except Exception as e:
+            self.status_message = f"Browser Init Failed: {str(e)}"
+            print(f"Browser Init Error: {e}")
+            self.searcher = None
 
     def get_status(self):
         """Return current status for frontend polling"""
         with self.lock:
             return {
                 "status": self.status_message,
+                "progress": self.progress,
                 "manual_count": len(self.manual_queue),
                 "auto_count": len(self.auto_queue),
                 "excluded_count": len(self.excluded_queue),
@@ -186,23 +197,40 @@ class WorkflowEngine:
         return {"error": "Index out of bounds"}
 
     def _navigate_browser(self, keyword: str):
-        """Internal: Use searcher to go to page"""
-        if not self.searcher:
-            self.open_browser()
-            
+        """Internal: Use searcher to go to page with auto-recovery"""
         def _nav_task():
-            if self.searcher:
+            # Try up to 2 times (1st attempt, if fail -> restart browser -> 2nd attempt)
+            for attempt in range(2):
                 try:
-                    # Use existing search method but just load page is enough?
-                    # Using search() fetches images, but for review we just want to SEE the page
-                    # searcher.search(keyword) might be too heavy if it scrapes images
-                    # Let's just use driver.get directly
-                    from urllib.parse import quote
-                    url = f"https://www.amazon.com/s?k={quote(keyword)}"
-                    if self.searcher.driver:
+                    # Ensure browser exists and is healthy
+                    if not self.searcher:
+                        self.open_browser()
+                    
+                    # Double check driver validity by probing simple property
+                    try:
+                        if self.searcher and self.searcher.driver:
+                            # Just accessing a property to check if session is alive
+                            _ = self.searcher.driver.window_handles
+                    except Exception:
+                        # If probe fails, force reopen
+                        print("Browser disconnected, restarting...")
+                        self.searcher = None
+                        self.open_browser()
+
+                    if self.searcher and self.searcher.driver:
+                        from urllib.parse import quote
+                        url = f"https://www.amazon.com/s?k={quote(keyword)}"
                         self.searcher.driver.get(url)
+                        return # Success
+
                 except Exception as e:
-                    print(f"Browser Nav Error: {e}")
+                    print(f"Browser Nav Error (Attempt {attempt+1}): {e}")
+                    # If this was first attempt, force restart next time
+                    if attempt == 0:
+                        self.searcher = None
+                        # Loop continues to attempt 2
+                    else:
+                        self.status_message = f"Browser Error: {str(e)}"
 
         threading.Thread(target=_nav_task).start()
 

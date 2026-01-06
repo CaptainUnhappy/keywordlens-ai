@@ -3,9 +3,9 @@ import { KeywordItem } from "../types";
 
 // Initialize AI client
 const getAiClient = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY; // Fallback to safe
   if (!apiKey) {
-    throw new Error("API Key not found. Please set process.env.API_KEY");
+    throw new Error("API Key not found. Please set process.env.GEMINI_API_KEY");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -34,15 +34,11 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 5, initialDel
 }
 
 // Zhipu AI Configuration
-// Note: In production, use process.env.ZHIPU_API_KEY
-const getZhipuKey = () => {
-  try {
-    return process.env.ZHIPU_API_KEY;
-  } catch (e) {
-    return undefined;
-  }
-};
-const ZHIPU_API_KEY = getZhipuKey() || "REDACTED_ZHIPU_KEY";
+const ZHIPU_API_KEY = process.env.ZHIPU_API_KEY;
+
+if (!ZHIPU_API_KEY) {
+  console.warn("ZHIPU_API_KEY is not set. Zhipu AI features will fail.");
+}
 const ZHIPU_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 
 export const analyzeProductImage = async (base64Image: string): Promise<{ description: string; category: string; features: string[] }> => {

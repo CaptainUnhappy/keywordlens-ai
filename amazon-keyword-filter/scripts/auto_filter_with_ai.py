@@ -40,7 +40,22 @@ Provide a detailed, flowing description using varied vocabulary that covers diff
 # ==================== 配置 ====================
 
 # 智谱AI API配置
-ZHIPU_API_KEY = "REDACTED_ZHIPU_KEY"
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# ==================== 配置 ====================
+
+# 智谱AI API配置
+ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
+if not ZHIPU_API_KEY:
+    # Try one level up if script is run from scripts dir
+    load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
+    ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
+
+if not ZHIPU_API_KEY:
+    print("Warning: ZHIPU_API_KEY not found in environment variables.")
 ZHIPU_API_URL = "https://open.bigmodel.cn/api/paas/v4/embeddings"
 EMBEDDING_DIMENSIONS = 1024
 

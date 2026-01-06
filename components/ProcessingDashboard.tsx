@@ -157,7 +157,8 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
   ];
 
   const totalProcessed = (backendStatus?.manual_count || 0) + (backendStatus?.auto_count || 0) + (backendStatus?.excluded_count || 0);
-  const progress = Math.min(100, (totalProcessed / initialKeywords.length) * 100);
+  // Use backend reported progress directly which handles the granular updates
+  const progress = backendStatus?.progress ?? 0;
 
   // NOTE: Removed full-page "Done" view to keep the dashboard visible as per user request.
   // if (status === 'done' && productContext) { return ... }

@@ -11,11 +11,17 @@ import json
 from typing import List, Dict
 import pandas as pd
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # ==================== 配置 ====================
 
 # 智谱AI API配置
-ZHIPU_API_KEY = "REDACTED_ZHIPU_KEY"
+ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
+if not ZHIPU_API_KEY:
+    print("Warning: ZHIPU_API_KEY not found in environment variables.")
 ZHIPU_API_URL = "https://open.bigmodel.cn/api/paas/v4/embeddings"
 EMBEDDING_DIMENSIONS = 2048  # 使用2048维向量（最高精度）
 
