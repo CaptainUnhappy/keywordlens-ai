@@ -18,3 +18,15 @@ View your app in AI Studio: https://ai.studio/apps/drive/1NRMuF5MhXkhZgrqOqiYOso
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Python Environment (Recommended)
+
+This project uses `uv` for dependency management.
+
+1.  **Setup**: Run `uv_setup.bat` (Windows) to automatically install `uv` and sync dependencies.
+2.  **Run Scripts**: Use `uv run` to execute Python scripts.
+
+    ```bash
+    uv run python demo_zhipu_filter.py
+    uv run python amazon-keyword-filter/scripts/analyze_keyword_with_ai.py --help
+    ```
