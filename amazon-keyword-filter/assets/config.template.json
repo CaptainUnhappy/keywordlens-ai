@@ -1,0 +1,48 @@
+{
+  "_comment": "亚马逊关键词筛选工具配置模板",
+
+  "product_image": "my_product.jpg",
+  "excel_file": "seller_sprite_keywords.xlsx",
+  "keyword_column": "关键词",
+  "output_file": "filtered_keywords.xlsx",
+
+  "similarity_threshold": 0.85,
+  "min_matches": 2,
+  "max_products": 10,
+  "amazon_domain": "amazon.com",
+
+  "_presets": {
+    "loose": {
+      "similarity_threshold": 0.75,
+      "min_matches": 1,
+      "_description": "宽松筛选 - 扩大覆盖面"
+    },
+    "default": {
+      "similarity_threshold": 0.85,
+      "min_matches": 2,
+      "_description": "默认推荐 - 平衡准确度和覆盖率"
+    },
+    "strict": {
+      "similarity_threshold": 0.90,
+      "min_matches": 3,
+      "_description": "严格筛选 - 精准投放"
+    },
+    "fast": {
+      "similarity_threshold": 0.85,
+      "min_matches": 2,
+      "max_products": 5,
+      "_description": "快速筛选 - 节省时间"
+    }
+  },
+
+  "_amazon_domains": {
+    "us": "amazon.com",
+    "uk": "amazon.co.uk",
+    "de": "amazon.de",
+    "fr": "amazon.fr",
+    "jp": "amazon.co.jp",
+    "ca": "amazon.ca",
+    "it": "amazon.it",
+    "es": "amazon.es"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "KeywordLens AI",
+  "description": "A high-efficiency keyword screening system combining Gemini Vision analysis with bulk semantic filtering.",
+  "requestFramePermissions": []
+}
