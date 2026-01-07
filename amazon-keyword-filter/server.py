@@ -1,5 +1,6 @@
 
 import uvicorn
+import logging
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
@@ -14,7 +15,52 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'scripts'))
 
 from scripts.workflow_engine import engine
 
-app = FastAPI()
+from contextlib import asynccontextmanager
+
+# Custom Log Filter
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Try to parse from args if available (Uvicorn standard)
+        # args: (client_addr, method, full_path, protocol, status_code)
+        if record.args and len(record.args) >= 5:
+            try:
+                path = str(record.args[2])
+                status = int(record.args[4])
+                
+                if status == 200:
+                    if path in ["/api/manual_queue", "/api/all_keywords", "/api/status"]:
+                        return False
+            except (ValueError, IndexError):
+                pass
+        
+        # Fallback to string matching
+        message = record.getMessage()
+        if "200 OK" in message:
+            if "/api/manual_queue" in message: return False
+            if "/api/all_keywords" in message: return False
+            if "/api/status" in message: return False
+            
+        return True
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Add filter
+    # Force get logger
+    logger = logging.getLogger("uvicorn.access")
+    
+    # Create filter
+    f = EndpointFilter()
+    logger.addFilter(f)
+    
+    # Also attach to all handlers to be safe
+    for handler in logger.handlers:
+        handler.addFilter(f)
+        
+    yield
+    # Shutdown logic (if any) can go here
+
+app = FastAPI(lifespan=lifespan)
+
 
 # CORS
 app.add_middleware(
@@ -28,6 +74,7 @@ app.add_middleware(
 class AnalyzeRequest(BaseModel):
     keywords: List[str]
     product_description: str
+    product_image: Optional[str] = None
 
 class ActionRequest(BaseModel):
     action: str # "keep", "delete", "undecided"
@@ -40,8 +87,13 @@ def read_root():
 @app.post("/api/analyze")
 def start_analysis(request: AnalyzeRequest):
     """Start the scoring and split process"""
-    engine.start_analysis(request.keywords, request.product_description)
+    engine.start_analysis(request.keywords, request.product_description, request.product_image)
     return {"status": "started"}
+
+@app.post("/api/start_verification")
+def start_verification():
+    """Manually start the image verification (Step 3)"""
+    return engine.start_auto_verification()
 
 @app.post("/api/upload_excel")
 async def upload_excel(file: UploadFile = File(...)):

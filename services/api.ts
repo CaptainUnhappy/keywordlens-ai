@@ -14,14 +14,28 @@ export interface AnalysisStatus {
         score: number;
         status: string;
     } | null;
+    batch_status?: string;
+    verified_keep?: number;
+    verified_drop?: number;
 }
 
 export const api = {
-    async analyze(keywords: string[], productDescription: string) {
+    async analyze(keywords: string[], productDescription: string, productImage: string) {
         const res = await fetch(`${API_BASE}/analyze`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keywords, product_description: productDescription })
+            body: JSON.stringify({
+                keywords,
+                product_description: productDescription,
+                product_image: productImage
+            })
+        });
+        return res.json();
+    },
+
+    async startVerification() {
+        const res = await fetch(`${API_BASE}/start_verification`, {
+            method: 'POST'
         });
         return res.json();
     },

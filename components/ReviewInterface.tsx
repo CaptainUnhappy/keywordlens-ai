@@ -43,7 +43,7 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
   // Initial load & Polling
   useEffect(() => {
     fetchState();
-    const interval = setInterval(fetchState, 1000); // Polling for updates (optional if we drive everything locally)
+    const interval = setInterval(fetchState, 3000); // Polling for updates (optional if we drive everything locally)
 
     // Trigger initial browser open
     api.navigateTo(0).catch(() => { });
@@ -232,12 +232,24 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
           </h3>
           <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
             {allKeywords.map((k, i) => (
-              <div key={i} className={`p-2 rounded text-xs flex justify-between items-center transition-all ${k.status === 'kept' ? 'bg-emerald-100/80 text-emerald-900 border-l-4 border-emerald-500' :
-                k.status === 'deleted' ? 'bg-rose-100/80 text-rose-900 border-l-4 border-rose-500' :
-                  k.status === 'undecided' ? 'bg-amber-100/80 text-amber-900 border-l-4 border-amber-500' :
-                    'bg-slate-50 border-l-4 border-transparent text-slate-500'
-                } mb-1`}>
-                <span className="truncate flex-1 mr-2" title={k.keyword}>{k.keyword}</span>
+              <div key={i} title={k.reason ? `${k.keyword}\nReason: ${k.reason}` : k.keyword}
+                className={`p-2 rounded text-xs flex justify-between items-center transition-all ${k.status === 'kept' || k.status === 'verified_keep' ? 'bg-emerald-100/80 text-emerald-900 border-l-4 border-emerald-500' :
+                  k.status === 'deleted' || k.status === 'verified_delete' ? 'bg-rose-100/80 text-rose-900 border-l-4 border-rose-500' :
+                    k.status === 'undecided' ? 'bg-amber-100/80 text-amber-900 border-l-4 border-amber-500' :
+                      k.status === 'AUTO' ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-400 animate-pulse' :
+                        'bg-slate-50 border-l-4 border-transparent text-slate-500'
+                  } mb-1`}>
+                <span className="truncate flex-1 mr-2">
+                  {k.keyword}
+                  {(k.status === 'verified_keep' || k.status === 'verified_delete') && (
+                    <span className="ml-1 text-[10px] opacity-70 border border-current px-1 rounded flex items-center gap-1 inline-flex">
+                      AI
+                      {k.similar_count !== undefined && <span title="Similar Products Found">({k.similar_count})</span>}
+                      {k.vision_score !== undefined && <span title="Vision Confidence">{(k.vision_score * 100).toFixed(0)}%</span>}
+                    </span>
+                  )}
+                  {k.status === 'AUTO' && <span className="ml-1 text-[10px]">Processing...</span>}
+                </span>
                 <span className="text-slate-400 w-8 text-right">{Math.round((k.score || 0) * 100)}</span>
               </div>
             ))}

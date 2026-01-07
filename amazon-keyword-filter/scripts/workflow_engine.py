@@ -17,6 +17,13 @@ except ImportError:
     sys.path.append(os.path.join(os.path.dirname(__file__), 'scripts'))
     from scripts.zhipu_scoring import score_keywords
 
+# Batch & Vision Imports
+import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from scripts.merge_images import merge_images_grid
+from scripts.merge_images import merge_images_grid
+from scripts.zhipu_vision import ZhipuVisionClient
+
 class WorkflowEngine:
     def __init__(self):
         # Queues
@@ -32,6 +39,10 @@ class WorkflowEngine:
         self.processed_count = 0
         self.progress = 0 # 0-100 percentage
         
+        # Parallel Verification State
+        self.verified_keep_count = 0
+        self.verified_drop_count = 0
+        
         # Browser Control
         self.searcher: Optional[AmazonSearcher] = None
         
@@ -45,14 +56,17 @@ class WorkflowEngine:
         # Data Storage
         self.original_df = None
         self.keyword_col_name = None
-
-    def start_analysis(self, keywords: List[str], product_description: str):
+        self.product_image = None # Base64 string
+        
+    def start_analysis(self, keywords: List[str], product_description: str, product_image: str = None):
         """Start the analysis process: Scoring -> Split queues"""
         self.is_processing = True
         self.status_message = "AI Scoring in progress..."
         self.total_keywords = len(keywords)
         self.processed_count = 0
         self.progress = 0
+        self.product_image = product_image
+        self.product_description = product_description
         
         # Clear queues immediately to prevent UI showing old data
         with self.lock:
@@ -99,10 +113,16 @@ class WorkflowEngine:
                 
                 self.processed_count = len(keywords) # Phase 1 done
                 self.progress = 100
-                self.status_message = f"Scoring Complete. Manual: {len(self.manual_queue)}, Auto: {len(self.auto_queue)}, Excl: {len(self.excluded_queue)}"
-                
-            # 2. Trigger Auto workflow (Optional: for now just mark them)
-            # self._start_auto_crawler() 
+            # 2. Trigger Auto workflow
+            # 2. Trigger Auto workflow
+            # Note: We now WAIT for user manual trigger (Step 3) to start verification
+            if self.auto_queue:
+                self.status_message = "Scoring Complete. Waiting for Review to start Verification..."
+                # self._start_parallel_verification() # DEFERRED
+            else:
+                self.status_message = f"Scoring Complete. Manual: {len(self.manual_queue)}, Auto: 0, Excl: {len(self.excluded_queue)}"
+                self.processed_count = len(keywords) # Phase 1 done
+                self.progress = 100
             
             # 3. Ready for manual review
             # Initialize browser if manual queue exists
@@ -116,6 +136,129 @@ class WorkflowEngine:
         finally:
             # self.is_processing = False # Keep processing true until everything is done?
             pass
+    def start_auto_verification(self):
+        """Manually trigger the parallel verification thread (Step 3 start)"""
+        if self.auto_queue:
+            self.status_message = "Starting Parallel Verification (GLM-4V)..."
+            self._start_parallel_verification()
+            return {"status": "started", "count": len(self.auto_queue)}
+        return {"status": "no_items"}
+
+    def _start_parallel_verification(self):
+        """Start the parallel verification thread"""
+        thread = threading.Thread(target=self._run_parallel_verification_thread)
+        thread.daemon = True
+        thread.start()
+
+    def _run_parallel_verification_thread(self):
+        """
+        Parallel Worker Loop:
+        Iterate through AUTO queue items that are marked 'AUTO'.
+        Process them in parallel using ThreadPool.
+        """
+        # Filter items that need processing
+        verification_target = [item for item in self.auto_queue if item['status'] == 'AUTO']
+        
+        if not verification_target:
+            return
+
+        # Define the worker function
+        def process_one_item(item):
+            try:
+                kw = item['keyword']
+                
+                # 1. Search Images
+                with AmazonSearcher(headless=True) as searcher:
+                     res = searcher.search(kw, max_products=10)
+                     urls = res.get('image_urls', [])
+                
+                if not urls:
+                    item['reason'] = "No images found on Amazon"
+                    # Keep valid format or mark verify_error?
+                    # Let's keep it as AUTO but with error? Or undecided?
+                    # For now, let's just skip updating valid/invalid or set to deleted?
+                    # Start with deleted safety
+                    item['status'] = 'verified_delete'
+                    return
+
+                # 2. Merge Images
+                safe_kw = "".join([c for c in kw if c.isalnum()])[:20]
+                temp_img = f"temp_collage_{safe_kw}_{int(time.time())}.jpg"
+                merge_images_grid(urls, temp_img, columns=5, img_size=(150,150))
+                
+                # Read Base64
+                with open(temp_img, "rb") as f:
+                    grid_b64 = base64.b64encode(f.read()).decode('utf-8')
+                
+                # Cleanup
+                if os.path.exists(temp_img):
+                    os.remove(temp_img)
+                    
+                # 3. AI Analysis (Sync)
+                client = ZhipuVisionClient()
+                
+                # Retrieve product context
+                ref_img = self.product_image
+                # If no ref image, maybe strict text only?
+                # But our prompt relies on Ref Image. 
+                # If ref_img is None, we should handle gracefully.
+                if not ref_img:
+                    # Fallback or Error
+                    item['reason'] = "Missing Reference Image"
+                    item['status'] = 'verified_delete'
+                    return
+
+                # Context description
+                # We need product_description, but it's not stored in self?
+                # Ah, _start_auto_verification_loop passed it.
+                # We need to store product_description in start_analysis too!
+                # Since I missed storing it in start_analysis, let me fix that in a separate edit or assume it's available?
+                # I can access the args of previous call? No.
+                # FIX: I need to update start_analysis to store product_description separately.
+                # For now I will assume I can fix that. 
+                # Wait, I can't assume. I need to fix it.
+                # Let's use a default placeholder if missing, but really I need to store it.
+                # I will add self.product_description to the class in a separate tool call if needed, 
+                # but currently I am in a multi_replace.
+                # I'll check self.product_description existence.
+                
+                desc = getattr(self, 'product_description', "Product")
+                
+                result = client.analyze_image_sync(ref_img, grid_b64, desc)
+                
+                # 4. Update Status (In-Place)
+                with self.lock:
+                    item['vision_score'] = result.get('score', 0)
+                    item['similar_count'] = result.get('similar_count', 0)
+                    item['reason'] = result.get('reason')
+                    
+                    if result.get('decision') == 'YES':
+                        item['status'] = 'verified_keep'
+                        self.verified_keep_count += 1
+                    else:
+                        item['status'] = 'verified_delete'
+                        self.verified_drop_count += 1
+                        
+            except Exception as e:
+                print(f"Verification Error ({item['keyword']}): {e}")
+                # item['status'] = 'error'
+
+        # Execute
+        # 3 workers for decent parallelism without overloading
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(process_one_item, item) for item in verification_target]
+            
+            # Monitoring
+            total = len(verification_target)
+            done = 0
+            for future in as_completed(futures):
+                done += 1
+                # Optional: Update a status message if we want, but we rely on the list view now.
+                # self.batch_status = f"Processing {done}/{total}" 
+                # We removed batch_status field, so maybe use status_message?
+                # But status_message overwrites "Scoring Complete...".
+                # Let's leave status_message alone or append?
+                pass
 
     def open_browser(self):
         """Initialize browser for manual review"""
@@ -151,7 +294,10 @@ class WorkflowEngine:
                 "excluded_count": len(self.excluded_queue),
                 "manual_pending": len([x for x in self.manual_queue if x['status'] == 'pending']),
                 "current_manual_index": self.current_manual_index,
-                "current_keyword": self._get_current_manual_keyword()
+                "current_keyword": self._get_current_manual_keyword(),
+                "current_keyword": self._get_current_manual_keyword(),
+                "verified_keep": self.verified_keep_count,
+                "verified_drop": self.verified_drop_count
             }
             
     def _get_current_manual_keyword(self):

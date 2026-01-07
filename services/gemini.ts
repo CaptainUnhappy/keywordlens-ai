@@ -34,10 +34,10 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 5, initialDel
 }
 
 export const analyzeProductImage = async (base64Image: string): Promise<{ description: string; category: string; features: string[] }> => {
-  return withRetry(async () => {
+  // Try Gemini first with a timeout
+  try {
     const ai = getAiClient();
 
-    // Clean base64 if it has data URL prefix, though typically passed without it from utils
     const cleanBase64 = base64Image.includes('base64,')
       ? base64Image.split('base64,')[1]
       : base64Image;
@@ -49,7 +49,7 @@ export const analyzeProductImage = async (base64Image: string): Promise<{ descri
       3. List key visual features, materials, or demographic targets.
     `;
 
-    const response = await ai.models.generateContent({
+    const geminiPromise = ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [
         {
@@ -77,11 +77,24 @@ export const analyzeProductImage = async (base64Image: string): Promise<{ descri
       }
     });
 
+    // 15 seconds timeout for Gemini
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Gemini Request Timed Out")), 15000)
+    );
+
+    const response = await Promise.race([geminiPromise, timeoutPromise]) as any;
+
     if (!response.text) throw new Error("No content received from Gemini AI");
 
     // Parse the JSON response directly
     return JSON.parse(response.text);
-  });
+
+  } catch (error) {
+    console.warn("Gemini Analysis Failed or Timed Out, switching to Zhipu (GLM)...", error);
+    // Dynamic import to avoid circular dep issues if any, or just clean separation
+    const { analyzeImageWithGlm } = await import('./glm');
+    return await analyzeImageWithGlm(base64Image);
+  }
 };
 
 export const batchScoreKeywords = async (

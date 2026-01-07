@@ -92,7 +92,7 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
         }
 
         addLog('Sending data to Python Backend...');
-        const response = await api.analyze(initialKeywords, productContext.description);
+        const response = await api.analyze(initialKeywords, productContext.description, productContext.imageData);
         addLog(`Backend initiated: ${JSON.stringify(response)}`);
 
         setStatus('polling');
@@ -131,15 +131,19 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
 
         // Logic to detect completion could be handled by backend status string
         const total = s.manual_count + s.auto_count + s.excluded_count;
-        if (s.status.includes('Scoring Complete') || total === initialKeywords.length) {
+        const isBatchActive = s.batch_status && s.batch_status !== 'Idle' && s.batch_status !== 'Error';
+        const isScoringDone = s.status.includes('Scoring Complete') || total === initialKeywords.length;
+
+        // Only finish if Scoring is done AND Batch is NOT active
+        if (isScoringDone && !isBatchActive) {
           setStatus('done');
-          addLog('Scoring phase complete.');
+          addLog('All processing complete.');
         }
 
       } catch (e) {
         console.error("Polling error", e);
       }
-    }, 1000);
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [status, initialKeywords.length]);
@@ -151,9 +155,14 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
   };
 
   // Convert backend stats to Chart Data
+  // Auto count includes verified ones, so we subtract to see pending
+  const pendingAuto = Math.max(0, (backendStatus?.auto_count || 0) - (backendStatus?.verified_keep || 0) - (backendStatus?.verified_drop || 0));
+
   const chartData = [
     { name: 'Manual Review', value: backendStatus?.manual_count || 0, color: '#fbbf24' }, // Amber
-    { name: 'Machine Auto', value: backendStatus?.auto_count || 0, color: '#3b82f6' },   // Blue
+    { name: 'Auto (Pending)', value: pendingAuto, color: '#3b82f6' },   // Blue
+    { name: 'Verified Keep', value: backendStatus?.verified_keep || 0, color: '#22c55e' }, // Green
+    { name: 'Verified Drop', value: backendStatus?.verified_drop || 0, color: '#ef4444' }, // Red
     { name: 'Excluded', value: backendStatus?.excluded_count || 0, color: '#94a3b8' },   // Slate (Gray)
   ];
 
@@ -200,8 +209,15 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
             <div className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
           </div>
 
-          <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
-            <Server size={12} /> Backend Mode: {backendStatus?.status || 'Connecting...'}
+          <div className="flex flex-col gap-1 text-xs text-slate-500 mt-2">
+            <div className="flex items-center gap-2">
+              <Server size={12} /> Backend: {backendStatus?.status || 'Connecting...'}
+            </div>
+            {backendStatus?.batch_status && backendStatus.batch_status !== 'Idle' && (
+              <div className="flex items-center gap-2 font-bold text-indigo-600 bg-indigo-50 p-2 rounded">
+                <CheckCircle2 size={12} /> Visual Verification: {backendStatus.batch_status}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -222,7 +238,6 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
 
       {/* Right: Stats */}
       <div className="lg:col-span-1 bg-white rounded-2xl shadow-lg p-6 border border-slate-100 h-[600px] flex flex-col">
-        <h3 className="text-lg font-bold text-slate-800 mb-4">Live Queue Distribution</h3>
         <div className="flex-1 relative w-full min-h-0">
           <div className="absolute inset-0">
             <ResponsiveContainer width="100%" height="100%">
@@ -255,7 +270,6 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
 
           {/* Selective Review Config */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-            <h4 className="text-sm font-bold text-slate-700 mb-3">Review Configuration</h4>
             <div className="space-y-2 mb-4">
               <label className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 transition">
                 <div className="flex items-center gap-2">
@@ -307,6 +321,10 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
                   include_auto: reviewConfig.auto,
                   include_excluded: reviewConfig.excluded
                 });
+
+                // Trigger backend verification (async)
+                api.startVerification().catch(console.error);
+
                 onAnalysisComplete([], productContext!);
               }}
               disabled={status !== 'done'}

@@ -8,6 +8,8 @@
 import sys
 import json
 import argparse
+import random
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -26,6 +28,14 @@ except ImportError:
 def create_session(retries=3, verify_ssl=True):
     """创建带重试机制的requests会话"""
     session = requests.Session()
+
+    # 模拟浏览器Header
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.amazon.com/",
+    })
 
     # 设置重试策略
     retry_strategy = Retry(
@@ -81,7 +91,7 @@ def download_image(url, session=None, timeout=10, verify_ssl=True):
 
 
 def merge_images_grid(image_urls, output_path, columns=5, img_size=(200, 200),
-                      debug=False, no_ssl_verify=False, border_size=2, max_workers=10):
+                      debug=False, no_ssl_verify=False, border_size=2, max_workers=4, delay_range=(0.5, 1.5)):
     """
     将多张图片合并为网格大图
 
@@ -103,7 +113,7 @@ def merge_images_grid(image_urls, output_path, columns=5, img_size=(200, 200),
         print("[错误] 没有图片需要合并")
         return None
 
-    print(f"[信息] 开始并发下载并合并 {len(image_urls)} 张图片（{max_workers}线程）...")
+    # print(f"[信息] 开始并发下载并合并 {len(image_urls)} 张图片（{max_workers}线程）...")
 
     # 创建会话（带重试机制）
     session = create_session(retries=3, verify_ssl=not no_ssl_verify)
@@ -119,6 +129,10 @@ def merge_images_grid(image_urls, output_path, columns=5, img_size=(200, 200),
         idx, url = idx_url
         if debug:
             print(f"[调试] 下载中 {idx}/{len(image_urls)}: {url[:60]}...")
+
+        # 随机延迟，防止被反爬
+        if delay_range:
+            time.sleep(random.uniform(delay_range[0], delay_range[1]))
 
         img = download_image(url, session=session, verify_ssl=not no_ssl_verify)
         if img:
@@ -155,15 +169,12 @@ def merge_images_grid(image_urls, output_path, columns=5, img_size=(200, 200),
         print("[错误] 没有成功下载任何图片")
         return None
 
-    print(f"[信息] 成功下载 {len(images)}/{len(image_urls)} 张图片")
-
     # 计算网格尺寸（不包含边框）
     rows = (len(images) + columns - 1) // columns  # 向上取整
     width = columns * img_size[0]
     height = rows * img_size[1]
 
-    print(f"[信息] 网格布局: {rows}行 x {columns}列")
-    print(f"[信息] 合并后尺寸: {width}x{height}")
+    print(f"[信息] 成功 {len(images)}/{len(image_urls)} 张图片 网格布局: {rows}行 x {columns}列 尺寸: {width}x{height}")
 
     # 创建空白画布（白色背景）
     merged = Image.new('RGB', (width, height), color=(255, 255, 255))
@@ -243,6 +254,12 @@ def main():
                         help='调试模式')
     parser.add_argument('--no-ssl-verify', action='store_true',
                         help='禁用SSL验证（解决SSL连接错误）')
+    parser.add_argument('--max-workers', type=int, default=4,
+                        help='并发线程数 (默认: 4)')
+    parser.add_argument('--delay-min', type=float, default=0.5,
+                        help='最小延迟秒数 (默认: 0.5)')
+    parser.add_argument('--delay-max', type=float, default=1.5,
+                        help='最大延迟秒数 (默认: 1.5)')
 
     args = parser.parse_args()
 
@@ -284,7 +301,9 @@ def main():
         columns=args.columns,
         img_size=(args.size, args.size),
         debug=args.debug,
-        no_ssl_verify=args.no_ssl_verify
+        no_ssl_verify=args.no_ssl_verify,
+        max_workers=args.max_workers,
+        delay_range=(args.delay_min, args.delay_max)
     )
 
     if output_path:
