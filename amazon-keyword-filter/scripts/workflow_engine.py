@@ -127,7 +127,8 @@ class WorkflowEngine:
             # 3. Ready for manual review
             # Initialize browser if manual queue exists
             if self.manual_queue:
-                self.open_browser()
+                pass 
+                # self.open_browser() # DISABLED for manual control
                 # Automatically load first item? Maybe wait for user action
                 
         except Exception as e:
@@ -232,9 +233,17 @@ class WorkflowEngine:
                     item['similar_count'] = result.get('similar_count', 0)
                     item['reason'] = result.get('reason')
                     
-                    if result.get('decision') == 'YES':
+                    decision = result.get('decision')
+
+                    if decision == 'YES':
                         item['status'] = 'verified_keep'
                         self.verified_keep_count += 1
+                    elif decision == 'MANUAL':
+                        item['status'] = 'pending'
+                        # Move to manual queue for human review
+                        if item in self.auto_queue:
+                            self.auto_queue.remove(item)
+                        self.manual_queue.append(item)
                     else:
                         item['status'] = 'verified_delete'
                         self.verified_drop_count += 1
@@ -265,6 +274,16 @@ class WorkflowEngine:
         try:
             self.status_message = "Opening Browser (Chrome)..."
             
+            # Check for dead session and reset if necessary
+            if self.searcher:
+                try:
+                    if self.searcher.driver:
+                        # Probe session validity
+                        _ = self.searcher.driver.title
+                except Exception:
+                    print("Found dead browser session. Restarting...")
+                    self.searcher = None
+
             if not self.searcher:
                 # headless=False for manual review
                 self.searcher = AmazonSearcher(headless=False, debug=True)
@@ -277,6 +296,11 @@ class WorkflowEngine:
                  _ = self.searcher.driver.title
 
             self.status_message = "Browser Ready. Waiting for manual review."
+            
+            # Auto-navigate to current keyword if available
+            current_item = self._get_current_manual_keyword()
+            if current_item:
+                self._navigate_browser(current_item['keyword'])
             
         except Exception as e:
             self.status_message = f"Browser Init Failed: {str(e)}"

@@ -43,7 +43,7 @@ class ZhipuVisionClient:
         请执行：
         1. 计数：统计拼图中明确是**同款/同类主产品**的数量 (Similar Count)。
         2. 评分：给出拼图与参考图的整体匹配置信度 (0.0-1.0)。如果拼图中包含大量不相关杂物，分数应低于 0.5。
-        3. 决策：只有当 **(同类主产品数量 / 总产品数) > 50%** 且 **置信度 > 0.6** 时，才返回 YES。否则一律返回 NO。
+        3. 决策：只有当 **(同类主产品数量 / 总产品数) > 30%** 且 **置信度 > 0.4** 时，才返回 YES。否则一律返回 NO。
 
         请严格返回以下 JSON 格式（不要包含 markdown 代码块）：
         {{
@@ -101,12 +101,11 @@ class ZhipuVisionClient:
                 if "reason" not in result_data: result_data["reason"] = content[:50]
                 return result_data
             except json.JSONDecodeError:
-                # Fallback if raw text
-                is_yes = "YES" in content.upper() or "是" in content
+                # Fallback to Manual Review if machine judgment fails
                 return {
-                    "decision": "YES" if is_yes else "NO",
+                    "decision": "MANUAL",
                     "score": 0.5,
-                    "reason": content[:100],
+                    "reason": f"Machine Judgment Failed (Json Error): {content[:50]}...",
                     "similar_count": 0
                 }
 

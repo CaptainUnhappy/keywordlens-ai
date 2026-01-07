@@ -182,6 +182,12 @@ def navigate_to(index: int = Body(..., embed=True)):
     res = engine.manual_navigate(index)
     return res
 
+@app.post("/api/open_browser")
+def open_browser():
+    """Manually open the browser"""
+    engine.open_browser()
+    return {"status": "browser opened"}
+
 @app.post("/api/shutdown")
 def shutdown():
     engine.shutdown()

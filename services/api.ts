@@ -78,6 +78,13 @@ export const api = {
         return res.json();
     },
 
+    async openBrowser() {
+        const res = await fetch(`${API_BASE}/open_browser`, {
+            method: 'POST'
+        });
+        return res.json();
+    },
+
     async configureReview(config: { include_manual: boolean, include_auto: boolean, include_excluded: boolean }) {
         const res = await fetch(`${API_BASE}/configure_review`, {
             method: 'POST',

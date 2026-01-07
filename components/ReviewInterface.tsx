@@ -45,8 +45,8 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
     fetchState();
     const interval = setInterval(fetchState, 3000); // Polling for updates (optional if we drive everything locally)
 
-    // Trigger initial browser open
-    api.navigateTo(0).catch(() => { });
+    // Trigger initial browser open - DISABLED
+    // api.navigateTo(0).catch(() => { });
 
     return () => clearInterval(interval);
   }, []);
@@ -116,8 +116,14 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
 
           <div className="mt-8 bg-slate-50 p-4 rounded-lg text-xs text-slate-500 border border-slate-200">
             <strong className="block mb-2 text-slate-700 flex items-center gap-2"><Server size={12} /> Browser Control</strong>
-            <p>Your screen should now show a browser window controlled by the backend.</p>
-            <p className="mt-2 text-indigo-600 italic">Clicking Approve/Reject will verify your choice and automatically navigate the browser to the next product.</p>
+            <p className="mb-3">Browser window requires manual launch:</p>
+            <button
+              onClick={() => api.openBrowser()}
+              className="w-full bg-slate-800 hover:bg-slate-900 text-white py-2 px-4 rounded-lg mb-3 flex items-center justify-center gap-2 transition shadow-sm"
+            >
+              <Server size={14} /> Open Browser
+            </button>
+            <p className="text-indigo-600 italic">Clicking Approve/Reject will verify your choice and automatically navigate the browser to the next product.</p>
           </div>
         </div>
 
