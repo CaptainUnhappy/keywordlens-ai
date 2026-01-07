@@ -54,6 +54,12 @@ class WorkflowEngine:
         self.processed_count = 0
         self.progress = 0
         
+        # Clear queues immediately to prevent UI showing old data
+        with self.lock:
+            self.manual_queue = []
+            self.auto_queue = []
+            self.excluded_queue = []
+        
         # Run in separate thread to not block API
         threading.Thread(target=self._run_scoring_and_split, args=(keywords, product_description)).start()
 
@@ -156,7 +162,78 @@ class WorkflowEngine:
     def get_manual_list(self):
         """Get the full list of manual keywords"""
         with self.lock:
-            return self.manual_queue
+            # Sort pending first
+            return sorted(self.manual_queue, key=lambda x: 0 if x['status'] == 'pending' else 1)
+
+    def get_all_keywords_list(self):
+        """Get ALL keywords for the unified list"""
+        with self.lock:
+            # Combine all for display
+            all_kws = self.manual_queue + self.auto_queue + self.excluded_queue
+            # Maybe sort by score?
+            return sorted(all_kws, key=lambda x: x['score'] or 0, reverse=True)
+
+    def move_all_to_manual(self):
+        """Deprecated: Use configure_manual_review instead"""
+        return self.configure_manual_review(True, True, True)
+
+    def configure_manual_review(self, include_manual: bool, include_auto: bool, include_excluded: bool):
+        """
+        Re-distribute items into manual or auto queues based on user selection.
+        Items originally in 'Manual' (>0.6) -> if include_manual: Review, else: Kept
+        Items originally in 'Auto' (0.45-0.6) -> if include_auto: Review, else: Kept
+        Items originally in 'Excluded' (<0.45) -> if include_excluded: Review, else: Deleted
+        """
+        with self.lock:
+            # 1. Collect all items
+            all_items = self.manual_queue + self.auto_queue + self.excluded_queue
+            
+            # 2. Clear queues
+            self.manual_queue = []
+            self.auto_queue = []
+            self.excluded_queue = []
+            
+            # 3. Re-distribute
+            for item in all_items:
+                score = item.get('score', 0)
+                
+                # Determine original category
+                if score > self.MANUAL_THRESHOLD:
+                    # Original: Manual
+                    if include_manual:
+                        item['status'] = 'pending'
+                        self.manual_queue.append(item)
+                    else:
+                        item['status'] = 'kept' # Auto behavior for high score
+                        self.auto_queue.append(item)
+                        
+                elif score >= self.AUTO_THRESHOLD:
+                    # Original: Auto
+                    if include_auto:
+                        item['status'] = 'pending'
+                        self.manual_queue.append(item)
+                    else:
+                        item['status'] = 'AUTO' # Auto behavior for mid score
+                        self.auto_queue.append(item)
+                        
+                else:
+                    # Original: Excluded
+                    if include_excluded:
+                        item['status'] = 'pending'
+                        self.manual_queue.append(item)
+                    else:
+                        item['status'] = 'deleted' # Auto behavior for low score
+                        self.excluded_queue.append(item)
+            
+            # 4. Reset progress/counters
+            self.current_manual_index = 0
+            self.status_message = f"Queues Configured. Manual Review: {len(self.manual_queue)} items."
+            
+            # 5. Initialize browser if needed
+            if len(self.manual_queue) > 0:
+                self.open_browser()
+            
+            return {"count": len(self.manual_queue)}
 
     def handle_manual_action(self, action: str, index: int):
         """Handle Keep/Delete action from frontend"""
@@ -170,6 +247,8 @@ class WorkflowEngine:
                 item['status'] = 'kept'
             elif action == "delete":
                 item['status'] = 'deleted'
+            elif action == "undecided":
+                item['status'] = 'undecided'
             
             # Move to next
             next_index = index + 1

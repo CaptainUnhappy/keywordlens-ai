@@ -29,6 +29,7 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
   const [status, setStatus] = useState<'analyzing_image' | 'starting_backend' | 'polling' | 'paused' | 'done'>('analyzing_image');
   const [productContext, setProductContext] = useState<ProductContext | null>(null);
   const [backendStatus, setBackendStatus] = useState<AnalysisStatus | null>(null);
+  const [reviewConfig, setReviewConfig] = useState({ manual: true, auto: false, excluded: false });
   const [logs, setLogs] = useState<string[]>([]);
 
   const isPausedRef = useRef(false);
@@ -251,26 +252,87 @@ export const ProcessingDashboard: React.FC<ProcessingDashboardProps> = ({
 
         {/* Buttons in Right Column */}
         <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col gap-3">
+
+          {/* Selective Review Config */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <h4 className="text-sm font-bold text-slate-700 mb-3">Review Configuration</h4>
+            <div className="space-y-2 mb-4">
+              <label className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 transition">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={reviewConfig.manual}
+                    onChange={e => setReviewConfig({ ...reviewConfig, manual: e.target.checked })}
+                    disabled={status !== 'done'}
+                    className="w-4 h-4 text-amber-500 rounded border-slate-300 focus:ring-amber-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">Manual Candidates</span>
+                </div>
+                <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded">{backendStatus?.manual_count || 0}</span>
+              </label>
+
+              <label className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 transition">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={reviewConfig.auto}
+                    onChange={e => setReviewConfig({ ...reviewConfig, auto: e.target.checked })}
+                    disabled={status !== 'done'}
+                    className="w-4 h-4 text-blue-500 rounded border-slate-300 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">Auto-Approve Candidates</span>
+                </div>
+                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{backendStatus?.auto_count || 0}</span>
+              </label>
+
+              <label className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 transition">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={reviewConfig.excluded}
+                    onChange={e => setReviewConfig({ ...reviewConfig, excluded: e.target.checked })}
+                    disabled={status !== 'done'}
+                    className="w-4 h-4 text-slate-500 rounded border-slate-300 focus:ring-slate-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">Excluded Candidates</span>
+                </div>
+                <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">{backendStatus?.excluded_count || 0}</span>
+              </label>
+            </div>
+
+            <button
+              onClick={async () => {
+                await api.configureReview({
+                  include_manual: reviewConfig.manual,
+                  include_auto: reviewConfig.auto,
+                  include_excluded: reviewConfig.excluded
+                });
+                onAnalysisComplete([], productContext!);
+              }}
+              disabled={status !== 'done'}
+              className={`w-full px-4 py-3 rounded-xl font-bold transition shadow-md flex items-center justify-center gap-2 ${status === 'done'
+                ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                }`}
+            >
+              Start Review ({
+                ((reviewConfig.manual ? backendStatus?.manual_count || 0 : 0) +
+                  (reviewConfig.auto ? backendStatus?.auto_count || 0 : 0) +
+                  (reviewConfig.excluded ? backendStatus?.excluded_count || 0 : 0))
+              } items)
+            </button>
+          </div>
+
           <button
             onClick={() => api.exportResults()}
             disabled={status !== 'done'}
             className={`w-full px-4 py-3 rounded-xl font-bold transition shadow-md font-bold transition flex items-center justify-center gap-2 border ${status === 'done'
-              ? 'bg-green-600 text-white hover:bg-green-700'
-              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+              ? 'bg-white text-green-600 border-green-200 hover:bg-green-50'
+              : 'bg-slate-100 text-slate-400 border-transparent cursor-not-allowed'
               }`}
           >
             <FileDown size={18} />
             Export Excel
-          </button>
-          <button
-            onClick={() => onAnalysisComplete([], productContext!)}
-            disabled={status !== 'done'}
-            className={`w-full px-4 py-3 rounded-xl font-bold transition shadow-md ${status === 'done'
-              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-              }`}
-          >
-            Start Hybrid Review
           </button>
         </div>
       </div>

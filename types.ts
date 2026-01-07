@@ -6,7 +6,14 @@ export enum AppStep {
 }
 
 export enum RelevanceStatus {
-  PENDING = 'PENDING',
+  PENDING = 'pending',
+  // Standard Backend Statuses
+  KEPT = 'kept',
+  DELETED = 'deleted',
+  UNDECIDED = 'undecided',
+  AUTO = 'AUTO',
+
+  // Legacy or Future Use
   HIGH_RELEVANCE = 'HIGH_RELEVANCE', // > 80 score
   MEDIUM_RELEVANCE = 'MEDIUM_RELEVANCE', // 40-80 score, needs human review
   LOW_RELEVANCE = 'LOW_RELEVANCE', // < 40 score

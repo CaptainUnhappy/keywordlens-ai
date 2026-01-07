@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppStep, KeywordItem, ProductContext } from './types';
+import { AppStep, KeywordItem, ProductContext, RelevanceStatus } from './types';
 import { FileUpload } from './components/FileUpload';
 import { ProcessingDashboard } from './components/ProcessingDashboard';
 import { ReviewInterface } from './components/ReviewInterface';
@@ -34,6 +34,42 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Re-check session when returning to UPLOAD
+  useEffect(() => {
+    if (step === AppStep.UPLOAD) {
+      try {
+        const saved = localStorage.getItem(SESSION_KEY);
+        setHasSavedSession(!!saved);
+      } catch (e) {
+        setHasSavedSession(false);
+      }
+    }
+  }, [step]);
+
+  // Save session to localStorage
+  const saveSession = (
+    stepVal: AppStep,
+    keywords: string[],
+    imgBase64: string,
+    processed: KeywordItem[],
+    ctx: ProductContext | null
+  ) => {
+    try {
+      const sessionData = {
+        step: stepVal,
+        rawKeywords: keywords,
+        imageBase64: imgBase64,
+        processedKeywords: processed,
+        productContext: ctx,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
+      setHasSavedSession(true); // Ensure UI reflects saved state if we are still on Step 1 (unlikely but safe)
+    } catch (e) {
+      console.error("Failed to save session", e);
+    }
+  };
+
   const restoreSession = () => {
     try {
       const saved = localStorage.getItem(SESSION_KEY);
@@ -43,21 +79,29 @@ const App: React.FC = () => {
       // Restore state
       setRawKeywords(data.rawKeywords || []);
       setImageBase64(data.imageBase64 || "");
-      // Note: We cannot restore the File object itself easily from LS, 
-      // but we have the base64 which is what matters for the API.
-      // We'll create a dummy file object if needed or just rely on base64.
+
       const dummyFile = new File([""], "restored_image.jpg", { type: "image/jpeg" });
       setImageFile(dummyFile);
-      // Logic gap: can't restore excel file object for export if refreshing page. 
-      // User might need to re-upload for export to work if restoring session.
 
-      setRestoredProcessed(data.processedKeywords || []);
+      const restoredProcessed = data.processedKeywords || [];
+      setRestoredProcessed(restoredProcessed);
+      setResults(restoredProcessed); // Also set results for ReviewInterface
 
       if (data.productContext) {
         setProductContext(data.productContext);
       }
 
-      setStep(AppStep.ANALYSIS);
+      // Smart Step Detection
+      let targetStep = AppStep.ANALYSIS;
+
+      // If we have processed keywords and at least one is "kept" (or we were explicitly in review), go to Review
+      // But user logic "judging by kept" is safer.
+      const hasKept = restoredProcessed.some((k: KeywordItem) => k.status === RelevanceStatus.KEPT);
+      if (hasKept || data.step === AppStep.REVIEW) {
+        targetStep = AppStep.REVIEW;
+      }
+
+      setStep(targetStep);
       setHasSavedSession(false); // Hide banner once restored
     } catch (e) {
       console.error("Failed to restore session", e);
@@ -69,24 +113,32 @@ const App: React.FC = () => {
   const clearSession = () => {
     localStorage.removeItem(SESSION_KEY);
     setHasSavedSession(false);
-    setRestoredProcessed([]);
+    // Don't clear state here, only clear storage. State clearing is done by handleFinish or handleFilesReady
   };
 
   const handleFilesReady = (keywords: string[], imgFile: File, base64: string, excFile: File) => {
+    // CRITICAL: Clear old session when starting a NEW task
+    clearSession();
+
     setRawKeywords(keywords);
     setImageFile(imgFile);
     setExcelFile(excFile);
     setImageBase64(base64);
-    setRestoredProcessed([]); // New upload, no restored items
+    setRestoredProcessed([]);
+    setResults([]); // Clear previous results
     setStep(AppStep.ANALYSIS);
+
+    // Auto-save immediately so if they refresh, they come back here
+    saveSession(AppStep.ANALYSIS, keywords, base64, [], null);
   };
 
   const handleAnalysisComplete = (processedKeywords: KeywordItem[], ctx: ProductContext) => {
     setResults(processedKeywords);
     setProductContext(ctx);
     setStep(AppStep.REVIEW);
-    // Optional: Keep session until they export in the review step? 
-    // For now we keep it so they can refresh Review page safely if we implemented persistence there too.
+
+    // Auto-save progress
+    saveSession(AppStep.REVIEW, rawKeywords, imageBase64, processedKeywords, ctx);
   };
 
   const handleFinish = () => {
@@ -152,7 +204,9 @@ const App: React.FC = () => {
                 filter thousands of keywords in minutes, keeping only the most relevant ones.
               </p>
             </div>
-            <FileUpload onFilesReady={handleFilesReady} />
+            <FileUpload
+              onFilesReady={handleFilesReady}
+            />
           </div>
         )}
 

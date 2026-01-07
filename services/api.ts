@@ -46,7 +46,7 @@ export const api = {
         return res.json();
     },
 
-    async performAction(action: 'keep' | 'delete', index: number) {
+    async performAction(action: 'keep' | 'delete' | 'undecided', index: number) {
         const res = await fetch(`${API_BASE}/action`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -61,6 +61,26 @@ export const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ index })
         });
+        return res.json();
+    },
+
+    async configureReview(config: { include_manual: boolean, include_auto: boolean, include_excluded: boolean }) {
+        const res = await fetch(`${API_BASE}/configure_review`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        return res.json();
+    },
+
+    async moveAllToManual() {
+        // Now just a wrapper or deprecated
+        const res = await fetch(`${API_BASE}/move_all_manual`, { method: 'POST' });
+        return res.json();
+    },
+
+    async getAllKeywords() {
+        const res = await fetch(`${API_BASE}/all_keywords`);
         return res.json();
     },
 

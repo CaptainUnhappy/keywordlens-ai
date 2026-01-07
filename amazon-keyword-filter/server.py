@@ -30,7 +30,7 @@ class AnalyzeRequest(BaseModel):
     product_description: str
 
 class ActionRequest(BaseModel):
-    action: str # "keep", "delete"
+    action: str # "keep", "delete", "undecided"
     index: int
 
 @app.get("/")
@@ -93,6 +93,30 @@ def get_status():
 def get_manual_queue():
     """Get list for review table"""
     return engine.get_manual_list()
+
+@app.get("/api/all_keywords")
+def get_all_keywords():
+    """Get all keywords for right sidebar"""
+    return engine.get_all_keywords_list()
+
+class ReviewConfig(BaseModel):
+    include_manual: bool
+    include_auto: bool
+    include_excluded: bool
+
+@app.post("/api/configure_review")
+def configure_review(config: ReviewConfig):
+    """Configure selective manual review"""
+    return engine.configure_manual_review(
+        config.include_manual,
+        config.include_auto,
+        config.include_excluded
+    )
+
+@app.post("/api/move_all_manual")
+def move_all_manual():
+    """Deprecated: Use configure_review"""
+    return engine.configure_manual_review(True, True, True)
 
 @app.post("/api/action")
 def perform_action(req: ActionRequest):

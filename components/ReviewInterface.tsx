@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { KeywordItem, ProductContext, RelevanceStatus } from '../types';
 import { api, AnalysisStatus } from '../services/api';
-import { Check, X, Download, Server } from 'lucide-react';
+import { Check, X, Download, Server, CircleHelp } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 interface ReviewInterfaceProps {
@@ -13,7 +13,10 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
   initialKeywords,
   productContext
 }) => {
-  // We'll manage state via the backend
+  // State for tabs
+  const [activeTab, setActiveTab] = useState<'review' | 'all'>('review');
+  const [allKeywords, setAllKeywords] = useState<any[]>([]);
+
   const [reviewQueue, setReviewQueue] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isConnected, setIsConnected] = useState(true);
@@ -26,6 +29,11 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
 
       const queue = await api.getManualQueue();
       setReviewQueue(queue);
+
+      // Fetch all keywords occasionaly or every time?
+      const all = await api.getAllKeywords();
+      setAllKeywords(all);
+
       setIsConnected(true);
     } catch (e) {
       setIsConnected(false);
@@ -45,11 +53,11 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
 
   const currentCard = reviewQueue[currentIndex];
 
-  const handleDecision = async (approved: boolean) => {
+  const handleDecision = async (decision: 'keep' | 'delete' | 'undecided') => {
     if (!currentCard) return;
 
     try {
-      await api.performAction(approved ? 'keep' : 'delete', currentIndex);
+      await api.performAction(decision, currentIndex);
       // Optimistic update
       // setCurrentIndex(prev => prev + 1); // Backend handles logic
       fetchState(); // Sync immediately
@@ -113,60 +121,124 @@ export const ReviewInterface: React.FC<ReviewInterfaceProps> = ({
           </div>
         </div>
 
-        {/* Center: Active Review Card */}
-        <div className="lg:col-span-6 flex flex-col">
-          <div className="flex-1 bg-white rounded-3xl shadow-xl border border-slate-200 p-8 flex flex-col items-center justify-center relative overflow-hidden">
-            {currentCard ? (
-              <>
-                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-400 to-indigo-500"></div>
-                <div className="text-center mb-8">
-                  <span className="inline-block px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold mb-4">
-                    Score: {currentCard.score?.toFixed(3)}
-                  </span>
-                  {currentCard.status !== 'pending' && (
-                    <span className={`block mt-2 text-xs font-bold uppercase ${currentCard.status === 'kept' ? 'text-green-600' : 'text-red-600'}`}>
-                      {currentCard.status}
-                    </span>
-                  )}
-                  <h2 className="text-4xl font-extrabold text-slate-900 mb-4">{currentCard.keyword}</h2>
-                  <p className="text-slate-400 text-sm">Reviewing {currentIndex + 1} of {reviewQueue.length}</p>
-                </div>
-
-                <div className="flex gap-6 mt-8">
-                  <button
-                    onClick={() => handleDecision(false)}
-                    className="w-20 h-20 rounded-full bg-slate-100 hover:bg-red-100 text-slate-400 hover:text-red-600 transition flex items-center justify-center border-2 border-slate-200 hover:border-red-300"
-                    title="Delete"
-                  >
-                    <X size={32} strokeWidth={3} />
-                  </button>
-                  <button
-                    onClick={() => handleDecision(true)}
-                    className="w-24 h-24 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl hover:shadow-2xl transition flex items-center justify-center transform hover:scale-105"
-                    title="Keep"
-                  >
-                    <Check size={40} strokeWidth={3} />
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="text-center">
-                <Check className="w-20 h-20 text-green-500 mx-auto mb-4" />
-                <h3 className="text-2xl font-bold text-slate-800">Review Complete!</h3>
-                <p className="text-slate-500 mt-2">No more pending items in the manual queue.</p>
-              </div>
-            )}
+        {/* Center: Tabs & Review/History */}
+        <div className="lg:col-span-5 flex flex-col h-full">
+          {/* Tabs Header */}
+          <div className="flex items-center gap-2 mb-4 bg-white p-1 rounded-xl shadow-sm border border-slate-100 w-fit">
+            <button
+              onClick={() => setActiveTab('review')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition ${activeTab === 'review' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            >Review Queue ({reviewQueue.length})</button>
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition ${activeTab === 'all' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            >History</button>
           </div>
+
+          {/* Tab Content */}
+          <div className={`flex-1 ${activeTab === 'review' ? 'block' : 'hidden'} flex flex-col`}>
+            <div className="flex-1 bg-white rounded-3xl shadow-xl border border-slate-200 p-8 flex flex-col relative overflow-hidden">
+              {currentCard ? (
+                <>
+                  <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-400 to-indigo-500"></div>
+
+                  {/* Content Area - Flexible height to absorb size changes */}
+                  <div className="flex-1 flex flex-col items-center justify-center min-h-0">
+                    <div className="text-center w-full">
+                      <span className="inline-block px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold mb-4">
+                        Score: {currentCard.score?.toFixed(3)}
+                      </span>
+                      {currentCard.status !== 'pending' && (
+                        <span className={`block mt-2 text-xs font-bold uppercase ${currentCard.status === 'kept' ? 'text-green-600' :
+                          currentCard.status === 'deleted' ? 'text-red-600' : 'text-amber-600'
+                          }`}>
+                          {currentCard.status}
+                        </span>
+                      )}
+
+                      {/* Fixed height container for text to further stabilize? Or just flex-center is enough.
+                          Let's trust flex-1 center, but maybe add explicit height limits or overflow handling if needed. 
+                      */}
+                      <h2 className="text-4xl font-extrabold text-slate-900 mb-4 px-4 leading-tight">
+                        {currentCard.keyword}
+                      </h2>
+                      <p className="text-slate-400 text-sm">Reviewing {currentIndex + 1} of {reviewQueue.length}</p>
+                    </div>
+                  </div>
+
+                  {/* Buttons Area - Fixed height footer */}
+                  <div className="h-32 flex-shrink-0 flex gap-6 items-center justify-center border-t border-slate-50 mt-4 pt-4">
+                    <button
+                      onClick={() => handleDecision('delete')}
+                      className="w-20 h-20 rounded-full bg-slate-100 hover:bg-red-100 text-slate-400 hover:text-red-600 transition flex items-center justify-center border-2 border-slate-200 hover:border-red-300"
+                      title="Delete"
+                    >
+                      <X size={32} strokeWidth={3} />
+                    </button>
+
+                    <button
+                      onClick={() => handleDecision('undecided')}
+                      className="w-20 h-20 rounded-full bg-amber-50 hover:bg-amber-100 text-slate-400 hover:text-amber-600 transition flex items-center justify-center border-2 border-slate-200 hover:border-amber-300 font-bold text-lg"
+                      title="Undecided"
+                    >
+                      <CircleHelp size={32} strokeWidth={3} />
+                    </button>
+
+                    <button
+                      onClick={() => handleDecision('keep')}
+                      className="w-20 h-20 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl hover:shadow-2xl transition flex items-center justify-center transform hover:scale-105"
+                      title="Keep"
+                    >
+                      <Check size={32} strokeWidth={3} />
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center flex-1 flex flex-col items-center justify-center">
+                  <Check className="w-20 h-20 text-green-500 mx-auto mb-4" />
+                  <h3 className="text-2xl font-bold text-slate-800">Review Complete!</h3>
+                  <p className="text-slate-500 mt-2">No more pending items in the manual queue.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className={`flex-1 ${activeTab === 'all' ? 'block' : 'hidden'} bg-white rounded-2xl shadow-lg border border-slate-200 p-4 flex flex-col min-h-0 overflow-y-auto`}>
+            <div className="space-y-2 pr-2">
+              {/* Stack structure (Newest/Last Modified on Top) - approximated by reversing the manual queue processed items? Or just showing the history stack as requested. */}
+              {/* The user requested "History" to be moved here. History was previously filtered by status != pending. */}
+              {reviewQueue.filter(k => k.status !== 'pending').reverse().map((k, i) => (
+                <div key={i} className={`p-3 rounded-lg text-sm flex justify-between items-center ${k.status === 'kept' ? 'bg-green-50 text-green-800' :
+                  k.status === 'undecided' ? 'bg-amber-50 text-amber-800' :
+                    'bg-red-50 text-red-800'
+                  }`}>
+                  <span className="font-bold">{k.keyword}</span>
+                  <span className="uppercase text-xs font-bold">{k.status}</span>
+                </div>
+              ))}
+              {reviewQueue.filter(k => k.status !== 'pending').length === 0 && (
+                <p className="text-center text-slate-400 py-10">No history yet.</p>
+              )}
+            </div>
+          </div>
+
         </div>
 
-        {/* Right: History */}
-        <div className="lg:col-span-3 bg-white rounded-2xl shadow-lg border border-slate-200 p-4 flex flex-col min-h-0">
-          <h3 className="font-bold text-slate-700 mb-4">History</h3>
-          <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-            {reviewQueue.filter(k => k.status !== 'pending').reverse().map((k, i) => (
-              <div key={i} className={`p-2 rounded-lg text-xs flex justify-between ${k.status === 'kept' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
-                <span className="font-medium">{k.keyword}</span>
-                <span>{k.status}</span>
+        {/* Right: All Keywords List (Scrollable) */}
+        <div className="lg:col-span-4 bg-white rounded-2xl shadow-lg border border-slate-200 p-4 flex flex-col min-h-0 h-full">
+          <h3 className="font-bold text-slate-700 mb-4 flex justify-between items-center">
+            <span>All Keywords List</span>
+            <span className="bg-slate-100 text-slate-500 px-2 py-1 rounded text-xs">{allKeywords.length}</span>
+          </h3>
+          <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+            {allKeywords.map((k, i) => (
+              <div key={i} className={`p-2 rounded text-xs flex justify-between items-center transition-all ${k.status === 'kept' ? 'bg-emerald-100/80 text-emerald-900 border-l-4 border-emerald-500' :
+                k.status === 'deleted' ? 'bg-rose-100/80 text-rose-900 border-l-4 border-rose-500' :
+                  k.status === 'undecided' ? 'bg-amber-100/80 text-amber-900 border-l-4 border-amber-500' :
+                    'bg-slate-50 border-l-4 border-transparent text-slate-500'
+                } mb-1`}>
+                <span className="truncate flex-1 mr-2" title={k.keyword}>{k.keyword}</span>
+                <span className="text-slate-400 w-8 text-right">{Math.round((k.score || 0) * 100)}</span>
               </div>
             ))}
           </div>
