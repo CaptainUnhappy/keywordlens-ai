@@ -400,8 +400,9 @@ class WorkflowEngine:
             self.status_message = f"Queues Configured. Manual Review: {len(self.manual_queue)} items."
             
             # 5. Initialize browser if needed
-            if len(self.manual_queue) > 0:
-                self.open_browser()
+            # DISABLED: Only open when user explicitly requests
+            # if len(self.manual_queue) > 0:
+            #     self.open_browser()
             
             return {"count": len(self.manual_queue)}
 
@@ -448,38 +449,36 @@ class WorkflowEngine:
     def _navigate_browser(self, keyword: str):
         """Internal: Use searcher to go to page with auto-recovery"""
         def _nav_task():
-            # Try up to 2 times (1st attempt, if fail -> restart browser -> 2nd attempt)
-            for attempt in range(2):
+            # Strict mode: Only navigate if browser is ALREADY open and healthy.
+            # Do NOT auto-open. Do NOT auto-restart.
+            
+            if not self.searcher:
+                # Browser not opened by user yet
+                return
+
+            try:
+                # 1. Probe session validity
                 try:
-                    # Ensure browser exists and is healthy
-                    if not self.searcher:
-                        self.open_browser()
-                    
-                    # Double check driver validity by probing simple property
-                    try:
-                        if self.searcher and self.searcher.driver:
-                            # Just accessing a property to check if session is alive
-                            _ = self.searcher.driver.window_handles
-                    except Exception:
-                        # If probe fails, force reopen
-                        print("Browser disconnected, restarting...")
-                        self.searcher = None
-                        self.open_browser()
+                    # Just accessing a property to check if session is alive
+                    if self.searcher.driver:
+                        _ = self.searcher.driver.window_handles
+                except Exception:
+                    # If probe fails, it means user closed the browser.
+                    # We do NOT restart it. We just mark it as closed.
+                    print("Browser disconnected (user closed?). Stopping navigation.")
+                    self.searcher = None
+                    return
 
-                    if self.searcher and self.searcher.driver:
-                        from urllib.parse import quote
-                        url = f"https://www.amazon.com/s?k={quote(keyword)}"
-                        self.searcher.driver.get(url)
-                        return # Success
+                # 2. Check again if we have a driver
+                if self.searcher and self.searcher.driver:
+                    from urllib.parse import quote
+                    url = f"https://www.amazon.com/s?k={quote(keyword)}"
+                    self.searcher.driver.get(url)
+                    return # Success
 
-                except Exception as e:
-                    print(f"Browser Nav Error (Attempt {attempt+1}): {e}")
-                    # If this was first attempt, force restart next time
-                    if attempt == 0:
-                        self.searcher = None
-                        # Loop continues to attempt 2
-                    else:
-                        self.status_message = f"Browser Error: {str(e)}"
+            except Exception as e:
+                print(f"Browser Nav Error: {e}")
+                # Don't restart, just log
 
         threading.Thread(target=_nav_task).start()
 
